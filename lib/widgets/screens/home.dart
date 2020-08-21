@@ -5,15 +5,25 @@ import 'package:scrobble_fm/main.dart';
 class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    LastFM.user.getInfo();
+
     return Scaffold(
+      drawer: Drawer(
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: <Widget>[],
+        ),
+      ),
       appBar: AppBar(
         title: Text(kAppName),
         actions: <Widget>[
           PopupMenuButton<_HomeOptions>(
             onSelected: (option) {
-              LastFM.auth
-                  .wipe()
-                  .then((_) => Navigator.of(context).pushReplacementNamed('/'));
+              if (option == _HomeOptions.logout) {
+                LastFM.auth.wipe().then(
+                      (_) => Navigator.of(context).pushReplacementNamed('/'),
+                    );
+              }
             },
             itemBuilder: (context) {
               return const [

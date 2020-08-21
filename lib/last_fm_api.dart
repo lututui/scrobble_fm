@@ -1,10 +1,13 @@
+/*
 import 'dart:convert';
 
+import 'package:bustle/bustle.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_user_agent/flutter_user_agent.dart';
 import 'package:http/http.dart';
+import 'package:package_info/package_info.dart';
 import 'package:yaml/yaml.dart';
 
 class LastFM {
@@ -17,32 +20,65 @@ class LastFM {
   static String _apiSecret;
 
   static _Auth auth;
+  static _User user;
   static String userAgent;
 
   static Future<void> init() async {
-    return FlutterUserAgent.init()
-        .then((_) {
-          final properties = FlutterUserAgent.properties;
+    return Future.wait([
+      _loadUserAgent(),
+      _loadApiKeyAndSecret(),
+      _loadApiModules(),
+    ]);
+  }
 
-          userAgent = 'ScrobbleFM/1.0.0+1 (${properties['systemName']} '
-              '${properties['systemVersion']})';
+  static Future<void> _loadUserAgent() async {
+    return Future.wait([
+      FlutterUserAgent.init(),
+      PackageInfo.fromPlatform(),
+    ]).then((value) {
+      final String systemName = FlutterUserAgent.properties['systemName'];
+      final String systemVersion = FlutterUserAgent.properties['systemVersion'];
+      final PackageInfo packageInfo = value[1];
 
-          _client = _LastFMClient(userAgent);
-          auth = _Auth();
+      assert(systemName != null && systemName.isNotEmpty);
+      assert(systemVersion != null && systemVersion.isNotEmpty);
+      assert(packageInfo != null &&
+          packageInfo.version.isNotEmpty &&
+          packageInfo.buildNumber.isNotEmpty);
 
-          return auth.init();
-        })
-        .then((_) => rootBundle.loadStructuredData<YamlMap>(
-              'assets/secret.yaml',
-              (value) => Future.value(loadYaml(value)),
-            ))
+      userAgent = 'ScrobbleFM/'
+          '${packageInfo.version}+${packageInfo.buildNumber} '
+          '($systemName $systemVersion)';
+
+      DebugLogger.log<LastFM>('User-Agent: $userAgent');
+
+      _client = _LastFMClient(userAgent);
+    });
+  }
+
+  static Future<void> _loadApiKeyAndSecret() async {
+    return rootBundle
+        .loadStructuredData<YamlMap>(
+      'assets/secret.yaml',
+      (value) => Future.value(loadYaml(value)),
+    )
         .then((yamlMap) {
-          assert(yamlMap.containsKey('api_key'));
-          assert(yamlMap.containsKey('api_secret'));
+      assert(yamlMap.containsKey('api_key'));
+      assert(yamlMap.containsKey('api_secret'));
 
-          _apiKey = yamlMap['api_key'];
-          _apiSecret = yamlMap['api_secret'];
-        });
+      _apiKey = yamlMap['api_key'];
+      _apiSecret = yamlMap['api_secret'];
+
+      assert(_apiKey.isNotEmpty);
+      assert(_apiSecret.isNotEmpty);
+    });
+  }
+
+  static Future<void> _loadApiModules() async {
+    auth = _Auth();
+    user = _User();
+
+    return Future.wait([auth.init()]);
   }
 }
 
@@ -60,29 +96,43 @@ class _LastFMClient extends BaseClient {
 
 class _Auth {
   String token;
+
   String sessionKey;
+  String username;
 
   String get authUrl => 'https://www.last.fm/api/auth/'
       '?api_key=${LastFM._apiKey}&token=$token';
 
   Future<void> init() async {
-    return FlutterSecureStorage().read(key: 'sessionKey').then(
-      (value) {
-        if (value == null || value.isEmpty) return;
+    final secureStorage = FlutterSecureStorage();
 
-        sessionKey = value;
-      },
-    );
+    return Future.wait([
+      secureStorage.read(key: 'sessionKey'),
+      secureStorage.read(key: 'username')
+    ]).then((values) {
+      if (values.any((element) => element == null || element.isEmpty)) {
+        DebugLogger.log<_Auth>('Failed to load session. Loaded: $values');
+
+        throw Exception('Failed to load session');
+      }
+
+      sessionKey = values[0];
+      username = values[1];
+    }).catchError((error) {
+      wipe();
+    });
   }
 
   Future<void> wipe() async {
-    assert(token == null);
-    assert(sessionKey != null);
-    return FlutterSecureStorage().delete(key: 'sessionKey').then(
-      (_) {
-        sessionKey = null;
-      },
-    );
+    final secureStorage = FlutterSecureStorage();
+
+    return Future.wait([
+      secureStorage.delete(key: 'sessionKey'),
+      secureStorage.delete(key: 'username'),
+    ]).then((_) {
+      sessionKey = null;
+      username = null;
+    });
   }
 
   Future<String> getToken() async {
@@ -101,7 +151,7 @@ class _Auth {
     });
   }
 
-  Future<String> getSession() {
+  Future<void> getSession() {
     assert(token != null);
     assert(sessionKey == null);
 
@@ -117,19 +167,42 @@ class _Auth {
         final decodedJson = _decode(value);
 
         if (!decodedJson.containsKey('session')) {
-          return null;
+          throw Exception('Failed to get session');
         }
 
         assert(decodedJson['session'] is Map);
+
         assert(decodedJson['session'].containsKey('key'));
         assert(decodedJson['session']['key'] is String);
         assert(decodedJson['session']['key'].isNotEmpty);
 
+        assert(decodedJson['session'].containsKey('name'));
+        assert(decodedJson['session']['name'] is String);
+        assert(decodedJson['session']['name'].isNotEmpty);
+
         sessionKey = decodedJson['session']['key'];
-        FlutterSecureStorage().write(key: 'sessionKey', value: sessionKey);
-        return sessionKey;
+        username = decodedJson['session']['name'];
+        return FlutterSecureStorage()
+          ..write(key: 'sessionKey', value: sessionKey)
+          ..write(key: 'username', value: username);
       },
     );
+  }
+}
+
+class _User {
+  Future<void> getInfo([String username]) {
+    return LastFM._client.post(
+      _requestURL,
+      body: _buildBodyRequest(
+        r'user.getinfo',
+        {'user': username ?? LastFM.auth.username},
+      ),
+    ).then((value) {
+      final decodedJson = _decode(value);
+
+      print(decodedJson);
+    });
   }
 }
 
@@ -177,3 +250,4 @@ Map<String, dynamic> _decode(Response response) {
 
   return decodedJson;
 }
+*/

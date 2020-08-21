@@ -7,6 +7,7 @@ version: 1.0.0+1
 
 environment:
   sdk: ">=2.7.0 <3.0.0"
+  flutter: ">=1.17.0 <2.0.0"
 
 dependencies:
   flutter:
@@ -17,14 +18,15 @@ dependencies:
   flutter_secure_storage: ^3.3.3
   http: ^0.12.1
   flutter_user_agent: ^1.2.2
-  crypto: ^2.1.4
+  crypto: ^2.1.5
   webview_flutter: ^0.3.22+1
   yaml: ^2.2.1
+  package_info: ^0.4.0+18
+  bustle: ^0.0.2+1
+  scrobblenaut: ^2.0.3
+  provider: ^4.1.2
 
 dev_dependencies:
-  flutter_test:
-    sdk: flutter
-
   pedantic: ^1.9.0
 
 flutter:

@@ -24,8 +24,8 @@ class _LoginScreenState extends State<LoginScreen> {
             setState(
               () {
                 _token = LastFM.auth
-                  .getToken()
-                  .then((_) => authorizeToken(context, LastFM.auth.authUrl));
+                    .getToken()
+                    .then((_) => authorizeToken(context, LastFM.auth.authUrl));
               },
             );
           },
@@ -51,25 +51,23 @@ class _LoginScreenState extends State<LoginScreen> {
     Navigator.of(context)
         .pushNamed('/loginWebView', arguments: authUrl)
         .then((_) => LastFM.auth.getSession())
-        .then(
-      (sessionKey) {
-        if (sessionKey == null) {
-          Scaffold.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Failed to retrieve token. Please try again'),
-            ),
-          );
-
-          setState(() {
-            _token = null;
-          });
-
-          return;
-        }
-
-        SchedulerBinding.instance.addPostFrameCallback(
-          (_) => Navigator.of(context).pushReplacementNamed('/'),
+        .then((_) {
+      SchedulerBinding.instance.addPostFrameCallback(
+        (_) => Navigator.of(context).pushReplacementNamed('/'),
+      );
+    }).catchError(
+      (_) {
+        Scaffold.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to retrieve token. Please try again'),
+          ),
         );
+
+        setState(() {
+          _token = null;
+        });
+
+        return;
       },
     );
   }
